@@ -32,6 +32,9 @@ namespace LeapTempoC
                     port = 8001;
                     useRightHand = true;
                 }
+
+                Console.WriteLine(string.Format("IP address is {0}, port is {1}, using {2} hand", ip, port, useRightHand ? "right" : "left"));
+
                 // Set up our listener:
                 QueueListener listener = new QueueListener(ip, port, useRightHand);
                 controller.Connect += listener.OnServiceConnect;

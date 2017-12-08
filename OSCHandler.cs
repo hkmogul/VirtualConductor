@@ -33,7 +33,6 @@ namespace LeapTempoC.Objects
 
         public void Initialize()
         {
-            // use fixed sized queues to prevent sudden spikes
             lastSentPan = -1;
             lastSentTempo = -1;
             lastSentVolume = -1;

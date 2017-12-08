@@ -52,19 +52,43 @@ namespace LeapTempoC
         /// If the right hand should be used
         /// </summary>
         private bool UseRightHand;
+
+        /// <summary>
+        /// If the first beat has been collected
+        /// </summary>
         private bool firstBeat;
+
+        /// <summary>
+        /// The time of the previous beat
+        /// </summary>
         private DateTime startTime;
+
+        /// <summary>
+        /// Initialize the listener at the home IP and constant port
+        /// </summary>
         public QueueListener()
         {
-            init(IPAddress.Parse("127.0.0.1"), 8001,true);
+            Init(IPAddress.Parse("127.0.0.1"), 8001,true);
         }
 
+        /// <summary>
+        /// Initialize the QueueListener with a given server IP address, port number, and if the right hand should be used
+        /// </summary>
+        /// <param name="ip">The IP address to send OSC messages to</param>
+        /// <param name="p">The port number to send OSC messages to</param>
+        /// <param name="useRightHand">Whether or not the right hand should be detected.</param>
         public QueueListener(IPAddress ip, int p, bool useRightHand)
         {
-            init(ip, p, useRightHand);
+            Init(ip, p, useRightHand);
         }
 
-        private void init(IPAddress ip, int p, bool useRightHand)
+        /// <summary>
+        /// Centralized initializer for constructor overloads
+        /// </summary>
+        /// <param name="ip">The IP address to send OSC messages to</param>
+        /// <param name="p">The port number to send OSC messages to</param>
+        /// <param name="useRightHand">Whether or not the right hand should be detected.</param>
+        private void Init(IPAddress ip, int p, bool useRightHand)
         {
             serverIP = ip;
             port = p;
@@ -76,33 +100,51 @@ namespace LeapTempoC
             oscHandler = new OSCHandler(serverIP, port);
             estimatedTempos = new FixedQueue(5);
         }
+
+        /// <summary>
+        /// Event listener for initialization
+        /// </summary>
+        /// <param name="controller">the handle for the LM controller</param>
         public void OnInit(Controller controller)
         {
             Console.WriteLine("Initialized");
         }
 
+        /// <summary>
+        /// Event response to connecting to the leapmotion controller
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="args"></param>
         public void OnConnect(object sender, DeviceEventArgs args)
         {
             Console.WriteLine("Connected");
         }
 
+        /// <summary>
+        /// Event response to disconnecting from the LM controller
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="args"></param>
         public void OnDisconnect(object sender, DeviceEventArgs args)
         {
             oscHandler.Dispose();
             Console.WriteLine("Disconnected");
         }
 
+        /// <summary>
+        /// Event responder to receiving a new frame
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="args"></param>
         public void OnFrame(object sender, FrameEventArgs args)
         {
-            Random r = new Random();
             // Get the most recent frame and report some basic information
             Frame frame = args.frame;
+            InteractionBox box = frame.InteractionBox;
             double xBounds = frame.InteractionBox.Width;
             Hand h;
-            if (frame.Hands.Count == 0)
-            {
-                return;
-            }
+
+            // search through detected hands
             int matchIndex = -1;
             for (int i = 0; i < frame.Hands.Count; i++)
             {
@@ -120,23 +162,24 @@ namespace LeapTempoC
 
             if (matchIndex < 0)
             {
+                // no matching hands were detected. just send the last played tempo
+                oscHandler.SendTempo();
                 return;
             }
 
             h = frame.Hands[matchIndex];
-            //Console.WriteLine(h.StabilizedPalmPosition.x);
-
+            
+            // further stabilize this position by adding the average of the last three points
             xPositions.EnqueueMovingAverage(h.StabilizedPalmPosition.x,3);
 
             double xBackAvg = xPositions.BackAverage(.8);
             double xFrontAvg = xPositions.FrontAverage(.2);
-
             double averageXpos = 0;
-            if ((xBackAvg * xFrontAvg < 0 && xPositions.Length() > 20))// || (zBackAvg * zFrontAvg < 0 && zPositions.Length() > 20))
+
+            if ((xBackAvg * xFrontAvg < 0 && xPositions.Length() > 20))
             {
                 Console.WriteLine("Beat!");
                 averageXpos = xPositions.Average();
-                Console.WriteLine(string.Format("Num points read before this was {0}", xPositions.Length()));
                 xPositions.Clear();
                 if (firstBeat)
                 {
@@ -154,17 +197,21 @@ namespace LeapTempoC
                     double durSeconds = span.Seconds + (span.Milliseconds / 1000.0);
                     int estTempo =(int) Math.Round(60 / durSeconds);
                     estimatedTempos.Enqueue(estTempo);
-                    oscHandler.SendTempo((int)estimatedTempos.Average());
+                    oscHandler.SendTempo((int)Math.Round(estimatedTempos.Average()/5)*5);
 
-                    double xDist = Math.Abs(h.StabilizedPalmPosition.x - initialPosition.x);
+                    var initialNorm = box.NormalizePoint(initialPosition);
+                    var currentNorm = box.NormalizePoint(h.StabilizedPalmPosition);
+                    double xDist = Math.Abs(currentNorm.x - initialNorm.x);
 
                     // reset initial position
                     initialPosition = h.StabilizedPalmPosition;
-                    oscHandler.SendVolume(xDist*10/xBounds);
+
+                    // send volume based on scale of distance
+                    oscHandler.SendVolume(xDist*10 > 1 ? 1: xDist*10);
+
+
                     double normAvgX = averageXpos / xBounds;
-                    Console.WriteLine(normAvgX);
-                    double sumAvgX = (averageXpos + xBounds) / xBounds;
-                    Console.WriteLine(sumAvgX);
+                    oscHandler.SendPan(normAvgX);
                     Console.WriteLine("-----");
                 }
             }
