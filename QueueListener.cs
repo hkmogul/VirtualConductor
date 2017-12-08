@@ -197,6 +197,8 @@ namespace LeapTempoC
                     double durSeconds = span.Seconds + (span.Milliseconds / 1000.0);
                     int estTempo =(int) Math.Round(60 / durSeconds);
                     estimatedTempos.Enqueue(estTempo);
+
+                    // round the average to the nearest 5 to prevent too many changes
                     oscHandler.SendTempo((int)Math.Round(estimatedTempos.Average()/5)*5);
 
                     var initialNorm = box.NormalizePoint(initialPosition);
