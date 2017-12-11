@@ -33,6 +33,8 @@ namespace LeapTempoC
         /// </summary>
         private Vector initialPosition;
 
+        private List<Vector> allPositions;
+
         /// <summary>
         /// Fixed length queue of estimated tempos, for smoothing the actual values
         /// </summary>
@@ -62,6 +64,10 @@ namespace LeapTempoC
         /// The time of the previous beat
         /// </summary>
         private DateTime startTime;
+
+        private int BeatAmt;
+
+        private List<float> lastTwoBeatsPositions;
 
         /// <summary>
         /// Initialize the listener at the home IP and constant port
@@ -98,7 +104,10 @@ namespace LeapTempoC
             UseRightHand = useRightHand;
             firstBeat = true;
             oscHandler = new OSCHandler(serverIP, port);
-            estimatedTempos = new FixedQueue(5);
+            estimatedTempos = new FixedQueue(10);
+            allPositions = new List<Vector>(100);
+            lastTwoBeatsPositions = new List<float>(100);
+            BeatAmt = 0;
         }
 
         /// <summary>
@@ -171,15 +180,22 @@ namespace LeapTempoC
             
             // further stabilize this position by adding the average of the last three points
             xPositions.EnqueueMovingAverage(h.StabilizedPalmPosition.x,3);
-
+            lastTwoBeatsPositions.Add(h.StabilizedPalmPosition.x);
+            //allPositions.Add(h.StabilizedPalmPosition);
             double xBackAvg = xPositions.BackAverage(.8);
             double xFrontAvg = xPositions.FrontAverage(.2);
             double averageXpos = 0;
 
             if ((xBackAvg * xFrontAvg < 0 && xPositions.Length() > 20))
             {
+                BeatAmt++;
                 Console.WriteLine("Beat!");
-                averageXpos = xPositions.Average();
+                if (BeatAmt %2 == 0)
+                {
+                    averageXpos = lastTwoBeatsPositions.Average();
+                    lastTwoBeatsPositions.Clear();
+                }
+
                 xPositions.Clear();
                 if (firstBeat)
                 {
@@ -198,22 +214,30 @@ namespace LeapTempoC
                     int estTempo =(int) Math.Round(60 / durSeconds);
                     estimatedTempos.Enqueue(estTempo);
 
-                    // round the average to the nearest 5 to prevent too many changes
-                    oscHandler.SendTempo((int)Math.Round(estimatedTempos.Average()/5)*5);
+
 
                     var initialNorm = box.NormalizePoint(initialPosition);
                     var currentNorm = box.NormalizePoint(h.StabilizedPalmPosition);
+                    float dist = initialNorm.DistanceTo(currentNorm);
+                    Console.WriteLine(string.Format("Actual 3D normalized dist {0}",dist));
                     double xDist = Math.Abs(currentNorm.x - initialNorm.x);
 
+                    var nonNormDist = initialPosition.DistanceTo(h.StabilizedPalmPosition);
+                    Console.WriteLine(string.Format("Non normalized dist {0}", nonNormDist));
+                    dist = nonNormDist/100;
                     // reset initial position
                     initialPosition = h.StabilizedPalmPosition;
-
                     // send volume based on scale of distance
-                    oscHandler.SendVolume(xDist*10 > 1 ? 1: xDist*10);
+                    if (BeatAmt %2 == 0)
+                    {
+                        Vector avgXPosition = new Vector((float)averageXpos, 0, 0);
+                        Vector normX = box.NormalizePoint(avgXPosition);
+                        oscHandler.SendPan(normX.x);
+                        oscHandler.SendVolume(dist * 2 > 1 ? 1 : dist * 2);
+                        // round the average to the nearest 5 to prevent too many changes
+                        oscHandler.SendTempo((int)Math.Round(estimatedTempos.Average() / 5) * 5);
+                    }
 
-
-                    double normAvgX = averageXpos / xBounds;
-                    oscHandler.SendPan(normAvgX);
                     Console.WriteLine("-----");
                 }
             }
@@ -265,6 +289,8 @@ namespace LeapTempoC
             }
             Console.WriteLine("[{0}] {1}", args.timestamp, args.message);
         }
+
+
     }
 
 }

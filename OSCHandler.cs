@@ -73,8 +73,9 @@ namespace LeapTempoC.Objects
         {   
             if (p != lastSentPan )
             {
-                var mess = new OscMessage(panAddr, p);
-                Console.WriteLine(string.Format("Sending pan {0}", p));
+                int val = (int)(p * 100);
+                var mess = new OscMessage(panAddr, val);
+                Console.WriteLine(string.Format("Sending pan {0}", val));
 
                 using (OscSender sender = new OscSender(address, port))
                 {
@@ -90,14 +91,16 @@ namespace LeapTempoC.Objects
         {
             if (v != lastSentVolume)
             {
-                var mess = new OscMessage(volumeAddr, v);
-                Console.WriteLine(string.Format("Sending volume {0}", v));
+                int val = (int)(v * 100);
+                var mess = new OscMessage(volumeAddr, val);
+                Console.WriteLine(string.Format("Sending volume {0}", val));
 
                 using (OscSender sender = new OscSender(address, port))
                 {
                     sender.Connect();
                     sender.Send(mess);
                 }
+
                 lastSentPan = v;
             }
         }
